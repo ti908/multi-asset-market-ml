@@ -22,7 +22,9 @@ from tests.fakes.fake_market_data_provider import (
     FakeProviderMode,
 )
 
-
+from tests.contracts.market_data_provider_contract import (
+    assert_market_data_provider_contract,
+)
 @pytest.fixture
 def asset() -> AssetConfig:
     """Return a valid asset configuration for provider tests."""
@@ -48,7 +50,25 @@ def end_date() -> date:
     """Return the end of the fake request range."""
     return date(2026, 1, 31)
 
+def test_fake_provider_satisfies_shared_contract(
+    asset: AssetConfig,
+    start_date: date,
+    end_date: date,
+) -> None:
+    """Fake provider must satisfy the reusable provider contract."""
+    provider = FakeMarketDataProvider()
 
+    result = provider.fetch_daily(
+        asset,
+        start_date,
+        end_date,
+    )
+
+    assert_market_data_provider_contract(
+        provider,
+        result,
+    )
+    
 def test_fake_provider_implements_market_data_provider() -> None:
     """A concrete provider must implement the shared abstraction."""
     provider = FakeMarketDataProvider()
