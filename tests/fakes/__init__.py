@@ -1,0 +1,1 @@
+"""Test doubles used by the project's automated test suite."""
