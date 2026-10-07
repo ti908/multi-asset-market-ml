@@ -1,0 +1,22 @@
+history:
+  start_date: "2015-01-01"
+  interval: "1d"
+
+cache:
+  ttl_hours: 24
+  format: "parquet"
+
+retry:
+  max_attempts: 3
+  initial_delay_seconds: 2.0
+  backoff_multiplier: 2.0
+
+validation:
+  large_daily_move_threshold: 0.30
+  allow_zero_volume: true
+
+paths:
+  raw: "data/raw"
+  cache: "data/cache"
+  processed: "data/processed"
+  synthetic: "data/synthetic"

@@ -1,0 +1,45 @@
+assets:
+  AAPL:
+    display_name: "Apple"
+    ticker: "AAPL"
+    asset_class: "equity"
+    currency: "USD"
+    calendar: "XNYS"
+    primary_provider: "yfinance"
+    backup_provider: "stooq"
+
+  MSFT:
+    display_name: "Microsoft"
+    ticker: "MSFT"
+    asset_class: "equity"
+    currency: "USD"
+    calendar: "XNYS"
+    primary_provider: "yfinance"
+    backup_provider: "stooq"
+
+  BTC_USD:
+    display_name: "Bitcoin"
+    ticker: "BTC-USD"
+    asset_class: "crypto"
+    currency: "USD"
+    calendar: "24/7"
+    primary_provider: "yfinance"
+    backup_provider: "stooq"
+
+  EURUSD:
+    display_name: "EUR/USD"
+    ticker: "EURUSD=X"
+    asset_class: "forex"
+    currency: "USD"
+    calendar: "24/5"
+    primary_provider: "yfinance"
+    backup_provider: "dukascopy"
+
+  GOLD:
+    display_name: "Gold Futures"
+    ticker: "GC=F"
+    asset_class: "commodity"
+    currency: "USD"
+    calendar: "COMEX"
+    primary_provider: "yfinance"
+    backup_provider: "stooq"

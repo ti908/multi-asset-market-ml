@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+
+# Environment variables / secrets
+.env
+
+# Data artifacts
+data/raw/*
+!data/raw/market/
+!data/raw/metadata/
+!data/raw/market/.gitkeep
+!data/raw/metadata/.gitkeep
+
+data/cache/*
+!data/cache/market/
+!data/cache/metadata/
+!data/cache/market/.gitkeep
+!data/cache/metadata/.gitkeep
+
+data/processed/*
+!data/processed/.gitkeep
+
+data/synthetic/*
+!data/synthetic/.gitkeep
+
+# Model artifacts - future use
+models/
+artifacts/
+
+# Logs
+*.log
+logs/

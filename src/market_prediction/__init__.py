@@ -1,0 +1,1 @@
+"""Multi-asset market prediction project."""
