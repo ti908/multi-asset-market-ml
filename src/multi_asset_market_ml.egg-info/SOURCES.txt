@@ -6,6 +6,9 @@ src/market_prediction/config/__init__.py
 src/market_prediction/config/loader.py
 src/market_prediction/ingestion/__init__.py
 src/market_prediction/providers/__init__.py
+src/market_prediction/providers/base.py
+src/market_prediction/providers/exceptions.py
+src/market_prediction/providers/yfinance_provider.py
 src/market_prediction/utils/__init__.py
 src/market_prediction/validation/__init__.py
 src/multi_asset_market_ml.egg-info/PKG-INFO

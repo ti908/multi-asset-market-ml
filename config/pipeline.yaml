@@ -15,6 +15,35 @@ validation:
   large_daily_move_threshold: 0.30
   allow_zero_volume: true
 
+  asset_classes:
+    equity:
+      large_daily_move_threshold: 0.20
+      volume_spike_multiplier: 5.0
+      volume_rolling_window: 20
+      max_missing_sessions: 2
+      check_zero_volume: true
+
+    crypto:
+      large_daily_move_threshold: 0.40
+      volume_spike_multiplier: 8.0
+      volume_rolling_window: 20
+      max_missing_sessions: 1
+      check_zero_volume: true
+
+    forex:
+      large_daily_move_threshold: 0.05
+      volume_spike_multiplier: 5.0
+      volume_rolling_window: 20
+      max_missing_sessions: 2
+      check_zero_volume: false
+
+    commodity:
+      large_daily_move_threshold: 0.15
+      volume_spike_multiplier: 6.0
+      volume_rolling_window: 20
+      max_missing_sessions: 2
+      check_zero_volume: true
+
 paths:
   raw: "data/raw"
   cache: "data/cache"
