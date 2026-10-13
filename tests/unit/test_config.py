@@ -78,8 +78,42 @@ retry:
   backoff_multiplier: 2.0
 
 validation:
-  large_daily_move_threshold: 0.30
-  allow_zero_volume: true
+  asset_classes:
+    equity:
+      large_daily_move_threshold: 0.20
+      volume_spike_multiplier: 5.0
+      volume_rolling_window: 20
+      max_missing_sessions: 2
+      check_zero_volume: true
+      calendar: XNYS
+      closed_dates: []
+
+    crypto:
+      large_daily_move_threshold: 0.40
+      volume_spike_multiplier: 8.0
+      volume_rolling_window: 20
+      max_missing_sessions: 1
+      check_zero_volume: true
+      calendar: 24/7
+      closed_dates: []
+
+    forex:
+      large_daily_move_threshold: 0.05
+      volume_spike_multiplier: 5.0
+      volume_rolling_window: 20
+      max_missing_sessions: 2
+      check_zero_volume: false
+      calendar: 24/5
+      closed_dates: []
+
+    commodity:
+      large_daily_move_threshold: 0.15
+      volume_spike_multiplier: 6.0
+      volume_rolling_window: 20
+      max_missing_sessions: 2
+      check_zero_volume: true
+      calendar: COMEX
+      closed_dates: []
 
 paths:
   raw: "data/raw"
@@ -151,8 +185,14 @@ def test_valid_pipeline_config_loads_into_typed_objects(
     assert config.retry.initial_delay_seconds == 2.0
     assert config.retry.backoff_multiplier == 2.0
 
-    assert config.validation.large_daily_move_threshold == 0.30
-    assert config.validation.allow_zero_volume is True
+    equity_validation = config.validation.asset_classes.equity
+    assert equity_validation.large_daily_move_threshold == 0.20
+    assert equity_validation.volume_spike_multiplier == 5.0
+    assert equity_validation.volume_rolling_window == 20
+    assert equity_validation.max_missing_sessions == 2
+    assert equity_validation.check_zero_volume is True
+    assert equity_validation.calendar == "XNYS"
+    assert equity_validation.closed_dates == []
 
     assert config.paths.raw == Path("data/raw")
     assert config.paths.cache == Path("data/cache")

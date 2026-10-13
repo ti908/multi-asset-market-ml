@@ -20,7 +20,15 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    ValidationError,
+    model_validator,
+)
 
 
 class ConfigLoadError(Exception):
@@ -94,13 +102,60 @@ class RetryConfig(BaseModel):
     backoff_multiplier: float = Field(gt=0)
 
 
+class AssetValidationConfig(BaseModel):
+    """Validation and anomaly-detection settings for one asset class."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    large_daily_move_threshold: float = Field(gt=0)
+    volume_spike_multiplier: float = Field(gt=1)
+    volume_rolling_window: int = Field(gt=1)
+    max_missing_sessions: int = Field(ge=0)
+    check_zero_volume: StrictBool
+    calendar: str = Field(min_length=1)
+    closed_dates: list[date] = Field(default_factory=list)
+
+
+class AssetClassValidationConfig(BaseModel):
+    """Validation settings for every supported asset class."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    equity: AssetValidationConfig
+    crypto: AssetValidationConfig
+    forex: AssetValidationConfig
+    commodity: AssetValidationConfig
+
+    @model_validator(mode="after")
+    def validate_calendars(self) -> "AssetClassValidationConfig":
+        """Ensure each asset class uses its intended calendar strategy."""
+
+        expected_calendars = {
+            "equity": "XNYS",
+            "crypto": "24/7",
+            "forex": "24/5",
+            "commodity": "COMEX",
+        }
+
+        for asset_class, expected_calendar in expected_calendars.items():
+            settings = getattr(self, asset_class)
+
+            if settings.calendar != expected_calendar:
+                raise ValueError(
+                    f"{asset_class} calendar must be "
+                    f"'{expected_calendar}', received "
+                    f"'{settings.calendar}'"
+                )
+
+        return self
+
+
 class ValidationConfig(BaseModel):
     """Pipeline-wide data-validation settings."""
 
     model_config = ConfigDict(extra="forbid")
 
-    large_daily_move_threshold: float = Field(gt=0)
-    allow_zero_volume: bool
+    asset_classes: AssetClassValidationConfig
 
 
 class PathConfig(BaseModel):

@@ -12,9 +12,6 @@ retry:
   backoff_multiplier: 2.0
 
 validation:
-  large_daily_move_threshold: 0.30
-  allow_zero_volume: true
-
   asset_classes:
     equity:
       large_daily_move_threshold: 0.20
@@ -22,6 +19,8 @@ validation:
       volume_rolling_window: 20
       max_missing_sessions: 2
       check_zero_volume: true
+      calendar: XNYS
+      closed_dates: [ ]
 
     crypto:
       large_daily_move_threshold: 0.40
@@ -29,6 +28,8 @@ validation:
       volume_rolling_window: 20
       max_missing_sessions: 1
       check_zero_volume: true
+      calendar: 24/7
+      closed_dates: [ ]
 
     forex:
       large_daily_move_threshold: 0.05
@@ -36,6 +37,8 @@ validation:
       volume_rolling_window: 20
       max_missing_sessions: 2
       check_zero_volume: false
+      calendar: 24/5
+      closed_dates: [ ]
 
     commodity:
       large_daily_move_threshold: 0.15
@@ -43,6 +46,8 @@ validation:
       volume_rolling_window: 20
       max_missing_sessions: 2
       check_zero_volume: true
+      calendar: COMEX
+      closed_dates: [ ]
 
 paths:
   raw: "data/raw"
