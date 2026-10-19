@@ -406,3 +406,18 @@ def test_unexpected_asset_field_is_rejected(
 
     assert "AAPL" in message
     assert "accidental_field" in message
+
+def test_unsupported_cache_format_is_rejected(tmp_path):
+    pipeline_yaml = VALID_PIPELINE_YAML.replace(
+        'format: "parquet"',
+        'format: "csv"',
+    )
+
+    pipeline_path = tmp_path / "pipeline.yaml"
+    pipeline_path.write_text(
+        pipeline_yaml,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigLoadError):
+        load_pipeline_config(pipeline_path)

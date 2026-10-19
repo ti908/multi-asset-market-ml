@@ -6,6 +6,7 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 from market_prediction.config import AssetConfig, PipelineConfig
+from market_prediction.validation.fingerprint import dataframe_fingerprint
 
 COLUMNS = ("timestamp", "open", "high", "low", "close", "adj_close", "volume", "source")
 PRICE_COLUMNS = ("open", "high", "low", "close")
@@ -31,6 +32,7 @@ class ValidationReport:
     row_count: int
     hard_failures: list[Issue] = field(default_factory=list)
     soft_anomalies: list[Issue] = field(default_factory=list)
+    dataset_fingerprint: str | None = None
     skipped_checks: list[str] = field(default_factory=list)
 
     @property
@@ -57,7 +59,11 @@ def validate_ohlcv(frame: pd.DataFrame, asset: AssetConfig, config: PipelineConf
     Structural failures skip dependent checks. Invalid numeric values skip row-level
     dependent comparisons and may skip entire return/volume-spike checks when unsafe.
     """
-    report = ValidationReport(asset=asset.ticker, row_count=len(frame))
+    report = ValidationReport(
+        asset=asset.ticker,
+        row_count=len(frame),
+        dataset_fingerprint=dataframe_fingerprint(frame),
+    )
     if frame.empty:
         report.add("empty_dataset", "error", None, None, "Dataset has no observations")
         report.skip(*ANOMALY_CHECKS)

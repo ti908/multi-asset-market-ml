@@ -30,7 +30,13 @@ def inspect_anomalies(frame: pd.DataFrame, stamps: pd.Series, numeric: dict[str,
         returns = close.pct_change(fill_method=None).abs()
         for i in range(1, len(frame)):
             if returns.iloc[i] > rules.large_daily_move_threshold:
-                extra = " Possible unadjusted stock split/corporate action; verify before interpreting as a market move." if asset.asset_class.value == "equity" else ""
+                extra = (
+                    " Possible corporate action or source-data restatement; "
+                    "Yahoo OHLC prices are split-adjusted even when auto_adjust=False. "
+                    "Verify before interpreting as a market move."
+                    if asset.asset_class.value == "equity"
+                    else ""
+                )
                 report.add("large_daily_move", "warning", dates.iloc[i].date(), "close", f"Absolute close-to-close move {returns.iloc[i]:.2%} exceeds {rules.large_daily_move_threshold:.2%}.{extra}")
 
     volume = numeric["volume"].astype(float)

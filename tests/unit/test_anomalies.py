@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 from market_prediction.config import load_assets_config, load_pipeline_config
 from market_prediction.validation import Status, validate_ohlcv
+from pathlib import Path
 
 @pytest.fixture
 def assets():
@@ -94,7 +95,62 @@ def test_max_missing_sessions_means_consecutive_not_total(assets, config):
     r = validate_ohlcv(data, assets["EURUSD"], config)
     assert "missing_sessions" not in rules(r)  # two then one; limit=2
 
-def test_unadjusted_equity_move_mentions_split(assets, config):
-    data = frame(["2026-01-05", "2026-01-06"], [100., 130.])
-    r = validate_ohlcv(data, assets["AAPL"], config)
-    assert any("unadjusted stock split" in x.message for x in r.soft_anomalies)
+def test_equity_move_mentions_split_adjusted_price_basis(
+    assets,
+    config,
+):
+    data = frame(
+        ["2026-01-05", "2026-01-06"],
+        [100.0, 130.0],
+    )
+
+    report = validate_ohlcv(
+        data,
+        assets["AAPL"],
+        config,
+    )
+
+    messages = [
+        issue.message
+        for issue in report.soft_anomalies
+        if issue.rule == "large_daily_move"
+    ]
+
+    assert len(messages) == 1
+    assert "corporate action or source-data restatement" in messages[0]
+    assert "split-adjusted" in messages[0]
+    assert "auto_adjust=False" in messages[0]
+    assert "unadjusted stock split" not in messages[0]
+
+def test_aapl_split_fixture_matches_split_adjusted_close_behavior(
+    assets,
+    config,
+):
+    fixture_path = (
+        Path(__file__).parents[1]
+        / "fixtures"
+        / "aapl_2020_split_auto_adjust_false.csv"
+    )
+
+    observed = pd.read_csv(fixture_path)
+
+    split_row = observed.loc[
+        observed["date"] == "2020-08-31"
+    ].iloc[0]
+
+    pre_split_row = observed.loc[
+        observed["date"] == "2020-08-28"
+    ].iloc[0]
+
+    assert split_row["stock_splits"] == 4.0
+
+    close_ratio = (
+        split_row["close"]
+        / pre_split_row["close"]
+    )
+
+    assert 0.5 < close_ratio < 2.0
+
+    assert not observed["close"].equals(
+        observed["adj_close"]
+    )

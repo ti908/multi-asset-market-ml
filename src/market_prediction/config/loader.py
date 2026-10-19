@@ -18,6 +18,7 @@ from datetime import date
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from typing import Literal
 
 import yaml
 
@@ -89,7 +90,7 @@ class CacheConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ttl_hours: int = Field(gt=0)
-    format: str = Field(min_length=1)
+    format: Literal["parquet"]
 
 
 class RetryConfig(BaseModel):
