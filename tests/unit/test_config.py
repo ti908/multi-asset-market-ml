@@ -46,11 +46,14 @@ assets:
   EURUSD:
     display_name: "EUR/USD"
     ticker: "EURUSD=X"
+    provider_symbols:
+      yfinance: "EURUSD=X"
+      twelve_data: "EUR/USD"
+      alpha_vantage: "EUR/USD"
     asset_class: "forex"
     currency: "USD"
     calendar: "24/5"
-    primary_provider: "yfinance"
-    backup_provider: "dukascopy"
+    primary_provider: "alpha_vantage"
 
   GOLD:
     display_name: "Gold Futures"
@@ -76,6 +79,17 @@ retry:
   max_attempts: 3
   initial_delay_seconds: 2.0
   backoff_multiplier: 2.0
+
+providers:
+  twelve_data:
+    base_url: "https://api.twelvedata.com"
+    api_key_env: "TWELVE_DATA_API_KEY"
+    timeout_seconds: 10.0
+
+  alpha_vantage:
+    base_url: "https://www.alphavantage.co/query"
+    api_key_env: "ALPHA_VANTAGE_API_KEY"
+    timeout_seconds: 30.0
 
 validation:
   asset_classes:
@@ -162,6 +176,27 @@ def test_valid_assets_config_loads_into_typed_objects(
     assert config.assets["EURUSD"].asset_class is AssetClass.FOREX
     assert config.assets["GOLD"].asset_class is AssetClass.COMMODITY
 
+    eurusd = config.assets["EURUSD"]
+
+    assert (
+            eurusd.primary_provider
+            is ProviderName.ALPHA_VANTAGE
+    )
+    assert eurusd.backup_provider is None
+
+    assert (
+            eurusd.symbol_for(ProviderName.ALPHA_VANTAGE)
+            == "EUR/USD"
+    )
+    assert (
+            eurusd.symbol_for(ProviderName.TWELVE_DATA)
+            == "EUR/USD"
+    )
+    assert (
+            eurusd.symbol_for(ProviderName.YFINANCE)
+            == "EURUSD=X"
+    )
+
 
 def test_valid_pipeline_config_loads_into_typed_objects(
     tmp_path: Path,
@@ -185,6 +220,19 @@ def test_valid_pipeline_config_loads_into_typed_objects(
     assert config.retry.initial_delay_seconds == 2.0
     assert config.retry.backoff_multiplier == 2.0
 
+    assert (
+            config.providers.twelve_data.base_url
+            == "https://api.twelvedata.com"
+    )
+    assert (
+            config.providers.twelve_data.api_key_env
+            == "TWELVE_DATA_API_KEY"
+    )
+    assert (
+            config.providers.twelve_data.timeout_seconds
+            == 10.0
+    )
+
     equity_validation = config.validation.asset_classes.equity
     assert equity_validation.large_daily_move_threshold == 0.20
     assert equity_validation.volume_spike_multiplier == 5.0
@@ -198,6 +246,16 @@ def test_valid_pipeline_config_loads_into_typed_objects(
     assert config.paths.cache == Path("data/cache")
     assert config.paths.processed == Path("data/processed")
     assert config.paths.synthetic == Path("data/synthetic")
+
+    assert (
+            config.providers.alpha_vantage.base_url
+            == "https://www.alphavantage.co/query"
+    )
+    assert (
+            config.providers.alpha_vantage.api_key_env
+            == "ALPHA_VANTAGE_API_KEY"
+    )
+    assert config.providers.alpha_vantage.timeout_seconds == 30.0
 
 
 def test_missing_required_asset_field_raises_clear_error(
@@ -421,3 +479,95 @@ def test_unsupported_cache_format_is_rejected(tmp_path):
 
     with pytest.raises(ConfigLoadError):
         load_pipeline_config(pipeline_path)
+
+def test_asset_without_provider_symbol_falls_back_to_ticker(
+    tmp_path: Path,
+) -> None:
+    path = write_config(
+        tmp_path,
+        "assets.yaml",
+        VALID_ASSETS_YAML,
+    )
+
+    config = load_assets_config(path)
+    aapl = config.assets["AAPL"]
+
+    assert aapl.symbol_for(ProviderName.YFINANCE) == "AAPL"
+
+def test_empty_twelve_data_base_url_is_rejected(
+    tmp_path: Path,
+) -> None:
+    pipeline_yaml = VALID_PIPELINE_YAML.replace(
+        'base_url: "https://api.twelvedata.com"',
+        'base_url: ""',
+    )
+
+    path = write_config(
+        tmp_path,
+        "pipeline.yaml",
+        pipeline_yaml,
+    )
+
+    with pytest.raises(ConfigLoadError) as exc_info:
+        load_pipeline_config(path)
+
+    assert "base_url" in str(exc_info.value)
+
+
+def test_empty_twelve_data_api_key_env_is_rejected(
+    tmp_path: Path,
+) -> None:
+    pipeline_yaml = VALID_PIPELINE_YAML.replace(
+        'api_key_env: "TWELVE_DATA_API_KEY"',
+        'api_key_env: ""',
+    )
+
+    path = write_config(
+        tmp_path,
+        "pipeline.yaml",
+        pipeline_yaml,
+    )
+
+    with pytest.raises(ConfigLoadError) as exc_info:
+        load_pipeline_config(path)
+
+    assert "api_key_env" in str(exc_info.value)
+
+
+def test_non_positive_twelve_data_timeout_is_rejected(
+    tmp_path: Path,
+) -> None:
+    pipeline_yaml = VALID_PIPELINE_YAML.replace(
+        "timeout_seconds: 10.0",
+        "timeout_seconds: 0",
+    )
+
+    path = write_config(
+        tmp_path,
+        "pipeline.yaml",
+        pipeline_yaml,
+    )
+
+    with pytest.raises(ConfigLoadError) as exc_info:
+        load_pipeline_config(path)
+
+    assert "timeout_seconds" in str(exc_info.value)
+
+def test_asset_config_allows_missing_backup_provider(
+    tmp_path: Path,
+) -> None:
+    """An asset may intentionally operate without a backup provider."""
+    assets_yaml = VALID_ASSETS_YAML.replace(
+        '    backup_provider: "yfinance"\n\n  GOLD:',
+        "\n  GOLD:",
+    )
+
+    path = write_config(
+        tmp_path,
+        "assets.yaml",
+        assets_yaml,
+    )
+
+    config = load_assets_config(path)
+
+    assert config.assets["EURUSD"].backup_provider is None

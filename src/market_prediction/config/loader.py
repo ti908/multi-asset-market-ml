@@ -51,6 +51,8 @@ class ProviderName(str, Enum):
     YFINANCE = "yfinance"
     STOOQ = "stooq"
     DUKASCOPY = "dukascopy"
+    TWELVE_DATA = "twelve_data"
+    ALPHA_VANTAGE = "alpha_vantage"
 
 
 class AssetConfig(BaseModel):
@@ -60,11 +62,18 @@ class AssetConfig(BaseModel):
 
     display_name: str = Field(min_length=1)
     ticker: str = Field(min_length=1)
+    provider_symbols: dict[ProviderName, str] = Field(
+        default_factory=dict
+    )
     asset_class: AssetClass
     currency: str = Field(min_length=1)
     calendar: str = Field(min_length=1)
     primary_provider: ProviderName
-    backup_provider: ProviderName
+    backup_provider: ProviderName | None = None
+
+    def symbol_for(self, provider: ProviderName) -> str:
+        """Return the configured symbol for a specific provider."""
+        return self.provider_symbols.get(provider, self.ticker)
 
 
 class AssetsConfig(BaseModel):
@@ -102,6 +111,32 @@ class RetryConfig(BaseModel):
     initial_delay_seconds: float = Field(gt=0)
     backoff_multiplier: float = Field(gt=0)
 
+class TwelveDataConfig(BaseModel):
+    """Configuration required to construct the Twelve Data provider."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_url: str = Field(min_length=1)
+    api_key_env: str = Field(min_length=1)
+    timeout_seconds: float = Field(gt=0)
+
+class AlphaVantageConfig(BaseModel):
+    """Configuration required to construct the Alpha Vantage provider."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_url: str = Field(min_length=1)
+    api_key_env: str = Field(min_length=1)
+    timeout_seconds: float = Field(gt=0)
+
+
+class ProviderConfig(BaseModel):
+    """Configuration for external market-data providers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    twelve_data: TwelveDataConfig
+    alpha_vantage: AlphaVantageConfig
 
 class AssetValidationConfig(BaseModel):
     """Validation and anomaly-detection settings for one asset class."""
@@ -178,6 +213,7 @@ class PipelineConfig(BaseModel):
     history: HistoryConfig
     cache: CacheConfig
     retry: RetryConfig
+    providers: ProviderConfig
     validation: ValidationConfig
     paths: PathConfig
 

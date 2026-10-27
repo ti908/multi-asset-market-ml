@@ -216,6 +216,7 @@ class CacheMetadata:
     price_basis: Mapping[str, ColumnPriceBasis]
     dataset_id: str
     restatement: RestatementSummary | None = None
+    bar_convention: str | None = None
 
 
 @dataclass(frozen=True)

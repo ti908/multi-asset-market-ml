@@ -57,13 +57,14 @@ class CacheManager:
         )
 
     def write(
-        self,
-        dataset: ValidatedDataset,
-        *,
-        provider: str,
-        fetch_timestamp: datetime,
-        price_adjustment_mode: str,
-        price_basis: Mapping[str, ColumnPriceBasis],
+            self,
+            dataset: ValidatedDataset,
+            *,
+            provider: str,
+            fetch_timestamp: datetime,
+            price_adjustment_mode: str,
+            price_basis: Mapping[str, ColumnPriceBasis],
+            bar_convention: str | None = None,
     ) -> CacheMetadata:
         """Atomically publish a complete validated cache generation."""
 
@@ -106,6 +107,13 @@ class CacheManager:
             raise ValueError(
                 "price_adjustment_mode must not be empty"
             )
+        if (
+            bar_convention is not None
+            and not bar_convention.strip()
+        ):
+            raise ValueError(
+                "bar_convention must not be empty when provided"
+            )
 
         asset = dataset.report.asset
         previous = self.read(asset)
@@ -113,12 +121,10 @@ class CacheManager:
         restatement = None
 
         if (
-            previous.state
-            in {
-                CacheState.FRESH,
-                CacheState.STALE,
-            }
+            previous.exists
             and previous.data is not None
+            and previous.metadata is not None
+            and previous.metadata.provider == provider
         ):
             restatement = self._detect_restatement(
                 previous.data,
@@ -145,6 +151,7 @@ class CacheManager:
             price_basis=dict(price_basis),
             dataset_id=actual_id,
             restatement=restatement,
+            bar_convention=bar_convention,
         )
 
         self._publish(
@@ -532,6 +539,7 @@ class CacheManager:
             },
             "dataset_id": metadata.dataset_id,
             "restatement": restatement,
+            "bar_convention": metadata.bar_convention,
         }
 
     @staticmethod
@@ -553,7 +561,16 @@ class CacheManager:
             "restatement",
         }
 
-        if set(raw) != required:
+        optional = {
+            "bar_convention",
+        }
+
+        keys = set(raw)
+
+        if (
+            not required.issubset(keys)
+            or not keys.issubset(required | optional)
+        ):
             raise ValueError(
                 "Cached metadata has unexpected schema"
             )
@@ -641,6 +658,11 @@ class CacheManager:
             price_basis=price_basis,
             dataset_id=str(raw["dataset_id"]),
             restatement=restatement,
+            bar_convention=(
+                None
+                if raw.get("bar_convention") is None
+                else str(raw["bar_convention"])
+            ),
         )
 
     @staticmethod

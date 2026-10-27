@@ -15,6 +15,8 @@ from market_prediction.config.loader import (
     load_assets_config,
     load_pipeline_config,
     load_project_config,
+    ProviderConfig,
+    TwelveDataConfig
 )
 
 __all__ = [
@@ -32,4 +34,6 @@ __all__ = [
     "load_assets_config",
     "load_pipeline_config",
     "load_project_config",
+    "ProviderConfig",
+    "TwelveDataConfig"
 ]

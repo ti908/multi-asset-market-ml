@@ -11,6 +11,17 @@ retry:
   initial_delay_seconds: 2.0
   backoff_multiplier: 2.0
 
+providers:
+  twelve_data:
+    base_url: "https://api.twelvedata.com"
+    api_key_env: "TWELVE_DATA_API_KEY"
+    timeout_seconds: 10.0
+
+  alpha_vantage:
+    base_url: "https://www.alphavantage.co/query"
+    api_key_env: "ALPHA_VANTAGE_API_KEY"
+    timeout_seconds: 30.0
+
 validation:
   asset_classes:
     equity:

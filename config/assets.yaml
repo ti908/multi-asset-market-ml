@@ -29,11 +29,14 @@ assets:
   EURUSD:
     display_name: "EUR/USD"
     ticker: "EURUSD=X"
+    provider_symbols:
+      yfinance: "EURUSD=X"
+      twelve_data: "EUR/USD"
+      alpha_vantage: "EUR/USD"
     asset_class: "forex"
     currency: "USD"
     calendar: "24/5"
-    primary_provider: "yfinance"
-    backup_provider: "dukascopy"
+    primary_provider: "alpha_vantage"
 
   GOLD:
     display_name: "Gold Futures"
