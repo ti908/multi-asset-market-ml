@@ -77,6 +77,49 @@ def test_close_outside_range(clean, assets, config):
     r = validate_ohlcv(broken, assets["AAPL"], config)
     assert ("price_outside_range", date(2026, 1, 6), "close") in issues(r)
 
+def test_real_yahoo_eurusd_bad_ohlc_is_blocked(
+    assets,
+    config,
+):
+    """Regression: preserve rejection of observed Yahoo EURUSD bad OHLC."""
+
+    yahoo_row = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2022-12-26"],
+                utc=True,
+            ),
+            "open": [1.066780],
+            "high": [1.063717],
+            "low": [1.060895],
+            "close": [1.066780],
+            "adj_close": [1.066780],
+            "volume": [np.nan],
+            "source": ["yfinance"],
+        }
+    )
+
+    report = validate_ohlcv(
+        yahoo_row,
+        assets["EURUSD"],
+        config,
+    )
+
+    assert (
+        "price_outside_range",
+        date(2022, 12, 26),
+        "open",
+    ) in issues(report)
+
+    assert (
+        "price_outside_range",
+        date(2022, 12, 26),
+        "close",
+    ) in issues(report)
+
+    assert report.status is Status.BLOCKED
+    assert not report.can_progress
+
 def test_negative_volume(clean, assets, config):
     broken = clean.copy()
     broken.loc[1, "volume"] = -5.

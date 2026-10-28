@@ -204,6 +204,18 @@ def pipeline_config(
                 "initial_delay_seconds": 2.0,
                 "backoff_multiplier": 2.0,
             },
+            "providers": {
+                "twelve_data": {
+                    "base_url": "https://api.twelvedata.com",
+                    "api_key_env": "TWELVE_DATA_API_KEY",
+                    "timeout_seconds": 10.0,
+                },
+                "alpha_vantage": {
+                    "base_url": "https://www.alphavantage.co/query",
+                    "api_key_env": "ALPHA_VANTAGE_API_KEY",
+                    "timeout_seconds": 30.0,
+                },
+            },
             "validation": {
                 "asset_classes": {
                     "equity": {
@@ -264,7 +276,6 @@ def cache_manager(
         now=lambda: NOW,
     )
 
-
 def registration(
     provider: MarketDataProvider,
     *,
@@ -273,13 +284,17 @@ def registration(
         str,
         ColumnPriceBasis,
     ] = YFINANCE_AUTO_ADJUST_FALSE_PRICE_BASIS,
+    bar_convention: str = (
+        "provider_native_daily_bar;"
+        "timestamp_normalized_to_utc"
+    ),
 ) -> ProviderRegistration:
     return ProviderRegistration(
         provider=provider,
         price_adjustment_mode=mode,
         price_basis=basis,
+        bar_convention=bar_convention,
     )
-
 
 def make_orchestrator(
     *,
@@ -394,6 +409,51 @@ def test_all_assets_succeed(
 
     assert len(primary.calls) == 2
 
+def test_provider_bar_convention_is_persisted_to_cache(
+    assets_config,
+    pipeline_config,
+    cache_manager,
+):
+    primary = FakeProvider(
+        "yfinance",
+        frames={
+            "AAPL": clean_frame("AAPL"),
+        },
+    )
+
+    convention = (
+        "provider_native_daily_bar;"
+        "timestamp_normalized_to_utc"
+    )
+
+    providers = {
+        ProviderName.YFINANCE: registration(
+            primary,
+            bar_convention=convention,
+        ),
+    }
+
+    orchestrator = IngestionOrchestrator(
+        assets_config=assets_config,
+        pipeline_config=pipeline_config,
+        providers=providers,
+        validator=validate_ohlcv,
+        cache_manager=cache_manager,
+        now=lambda: NOW,
+    )
+
+    run = orchestrator.run(asset_ids=["AAPL"])
+
+    result = run.assets[0]
+
+    assert result.outcome is AssetOutcome.SUCCESS
+
+    cached = cache_manager.read("AAPL")
+
+    assert cached.state is CacheState.FRESH
+    assert cached.metadata is not None
+    assert cached.metadata.provider == "yfinance"
+    assert cached.metadata.bar_convention == convention
 
 def test_validation_rejection_does_not_stop_other_assets(
     assets_config,
@@ -604,7 +664,7 @@ def test_both_providers_fail_without_cache_is_clean_failure(
     assert run.exit_code == 2
 
 
-def test_fallback_price_basis_mismatch_preserves_existing_cache(
+def test_cross_provider_price_basis_change_allows_full_replacement(
     assets_config,
     pipeline_config,
     tmp_path,
@@ -624,20 +684,31 @@ def test_fallback_price_basis_mismatch_preserves_existing_cache(
         pipeline_config=pipeline_config,
         frame=old_frame,
         fetch_timestamp=NOW - timedelta(hours=25),
+        provider="yfinance",
     )
-
-    before = cache.read("AAPL")
 
     primary = FakeProvider(
         "yfinance",
         failures={
-            "AAPL": ProviderUnavailableError("primary down"),
+            "AAPL": ProviderUnavailableError(
+                "primary down"
+            ),
         },
     )
+
+    replacement = clean_frame(
+        "AAPL",
+        source="stooq",
+    )
+
+    # Make the replacement observably different from
+    # the previously cached Yahoo generation.
+    replacement["volume"] = replacement["volume"] + 10
+
     backup = FakeProvider(
         "stooq",
         frames={
-            "AAPL": clean_frame("AAPL", source="stooq"),
+            "AAPL": replacement,
         },
     )
 
@@ -657,16 +728,32 @@ def test_fallback_price_basis_mismatch_preserves_existing_cache(
 
     result = run.assets[0]
 
-    assert result.outcome is AssetOutcome.FAILED_CACHE
-    assert result.failure_category is FailureCategory.PRICE_BASIS
-    assert result.cache_action is CacheAction.NOT_WRITTEN
+    assert result.outcome is AssetOutcome.SUCCESS_VIA_FALLBACK
+    assert result.provider_used == "stooq"
+    assert result.fallback_used is True
+    assert result.cache_action is CacheAction.WRITTEN
 
     after = cache.read("AAPL")
 
-    assert before.metadata is not None
+    assert after.state is CacheState.FRESH
     assert after.metadata is not None
-    assert after.metadata.dataset_id == before.metadata.dataset_id
-    assert after.metadata.provider == before.metadata.provider
+    assert after.data is not None
+
+    assert after.metadata.provider == "stooq"
+    assert after.metadata.price_basis == ALTERNATE_PRICE_BASIS
+
+    # A provider migration is a complete replacement,
+    # not a restatement of the previous provider.
+    assert after.metadata.restatement is None
+
+    # No Yahoo rows may survive the provider switch.
+    assert len(after.data) == len(replacement)
+    assert set(after.data["source"]) == {"stooq"}
+
+    pd.testing.assert_frame_equal(
+        after.data.reset_index(drop=True),
+        replacement.reset_index(drop=True),
+    )
 
 
 def test_fresh_cache_skips_provider(
@@ -710,6 +797,74 @@ def test_fresh_cache_skips_provider(
     assert primary.calls == []
     assert run.status is RunStatus.SUCCESS
 
+def test_fresh_cache_from_different_provider_does_not_skip_primary(
+    assets_config,
+    pipeline_config,
+    cache_manager,
+):
+    asset = assets_config.assets["AAPL"]
+
+    seed_cache(
+        cache_manager=cache_manager,
+        asset=asset,
+        pipeline_config=pipeline_config,
+        frame=clean_frame(
+            "AAPL",
+            source="stooq",
+        ),
+        fetch_timestamp=NOW - timedelta(hours=1),
+        provider="stooq",
+    )
+
+    replacement = clean_frame(
+        "AAPL",
+        source="yfinance",
+    )
+    replacement["volume"] = replacement["volume"] + 10
+
+    primary = FakeProvider(
+        "yfinance",
+        frames={
+            "AAPL": replacement,
+        },
+    )
+
+    orchestrator = make_orchestrator(
+        assets_config=assets_config,
+        pipeline_config=pipeline_config,
+        cache_manager=cache_manager,
+        primary=primary,
+    )
+
+    run = orchestrator.run(asset_ids=["AAPL"])
+
+    result = run.assets[0]
+
+    assert result.outcome is AssetOutcome.SUCCESS
+    assert result.provider_used == "yfinance"
+    assert result.fallback_used is False
+    assert result.cache_action is CacheAction.WRITTEN
+
+    # Freshness alone must not suppress migration back
+    # to the currently configured primary provider.
+    assert len(primary.calls) == 1
+
+    cached = cache_manager.read("AAPL")
+
+    assert cached.state is CacheState.FRESH
+    assert cached.metadata is not None
+    assert cached.data is not None
+
+    assert cached.metadata.provider == "yfinance"
+    assert cached.metadata.restatement is None
+    assert set(cached.data["source"]) == {
+        "yfinance"
+    }
+
+    pd.testing.assert_frame_equal(
+        cached.data.reset_index(drop=True),
+        replacement.reset_index(drop=True),
+    )
 
 def test_force_refresh_bypasses_fresh_cache(
     assets_config,
@@ -1027,3 +1182,47 @@ def test_missing_primary_registration_can_use_registered_backup(
     assert result.cache_action is CacheAction.WRITTEN
     assert len(backup.calls) == 1
     assert run.status is RunStatus.SUCCESS
+
+def test_primary_failure_without_backup_returns_provider_failure(
+    assets_config,
+    pipeline_config,
+    cache_manager,
+):
+    asset = assets_config.assets["AAPL"]
+    asset.backup_provider = None
+
+    primary = FakeProvider(
+        "yfinance",
+        failures={
+            "AAPL": ProviderUnavailableError(
+                "primary unavailable"
+            ),
+        },
+    )
+
+    orchestrator = IngestionOrchestrator(
+        assets_config=assets_config,
+        pipeline_config=pipeline_config,
+        providers={
+            ProviderName.YFINANCE: registration(primary),
+        },
+        validator=validate_ohlcv,
+        cache_manager=cache_manager,
+        now=lambda: NOW,
+    )
+
+    run = orchestrator.run(asset_ids=["AAPL"])
+
+    result = run.assets[0]
+
+    assert result.outcome is AssetOutcome.FAILED_PROVIDER
+    assert result.provider_used is None
+    assert result.fallback_used is False
+    assert result.cache_action is CacheAction.NOT_WRITTEN
+    assert result.failure_category is FailureCategory.PROVIDER
+
+    assert "primary unavailable" in result.failure_reason
+    assert "No backup provider is configured" in result.failure_reason
+
+    assert run.status is RunStatus.TOTAL_FAILURE
+    assert run.exit_code == 2

@@ -66,11 +66,12 @@ Validator = Callable[
 
 @dataclass(frozen=True)
 class ProviderRegistration:
-    """Provider plus the price semantics of data it returns."""
+    """Provider plus the persisted semantics of data it returns."""
 
     provider: MarketDataProvider
     price_adjustment_mode: str
     price_basis: Mapping[str, ColumnPriceBasis]
+    bar_convention: str
 
     def __post_init__(self) -> None:
         if not self.price_adjustment_mode.strip():
@@ -81,6 +82,11 @@ class ProviderRegistration:
         if not self.price_basis:
             raise ValueError(
                 "price_basis must not be empty"
+            )
+
+        if not self.bar_convention.strip():
+            raise ValueError(
+                "bar_convention must not be empty"
             )
 
 
@@ -191,9 +197,17 @@ class IngestionOrchestrator:
             asset.ticker
         )
 
+        cache_provider = (
+            cache_before.metadata.provider
+            if cache_before.metadata is not None
+            else None
+        )
+
         if (
-            cache_before.state is CacheState.FRESH
-            and not force_refresh
+                cache_before.state is CacheState.FRESH
+                and not force_refresh
+                and cache_provider
+                == asset.primary_provider.value
         ):
             metadata = cache_before.metadata
 
@@ -263,13 +277,26 @@ class IngestionOrchestrator:
         )
 
     def _try_backup(
-        self,
-        *,
-        asset_id: str,
-        asset: AssetConfig,
-        cache_before: CacheReadResult,
-        primary_error: ProviderError,
+            self,
+            *,
+            asset_id: str,
+            asset: AssetConfig,
+            cache_before: CacheReadResult,
+            primary_error: ProviderError,
     ) -> AssetIngestionResult:
+        if asset.backup_provider is None:
+            return self._provider_failure_result(
+                asset_id=asset_id,
+                asset=asset,
+                cache_before=cache_before,
+                reason=(
+                    "Primary provider "
+                    f"'{asset.primary_provider.value}' failed: "
+                    f"{primary_error}. "
+                    "No backup provider is configured."
+                ),
+            )
+
         backup = self._providers.get(
             asset.backup_provider
         )
@@ -390,6 +417,7 @@ class IngestionOrchestrator:
                     registration.price_adjustment_mode
                 ),
                 price_basis=registration.price_basis,
+                bar_convention=registration.bar_convention,
             )
         except (OSError, ValidationGateError, ValueError) as exc:
             return AssetIngestionResult(
@@ -502,6 +530,13 @@ class IngestionOrchestrator:
                 "Usable cache has no metadata; refusing "
                 "replacement."
             )
+
+        # Price-basis compatibility protects refreshes of the
+        # same provider history. A different provider represents
+        # an intentional complete-history migration, so its own
+        # price basis may legitimately differ.
+        if metadata.provider != registration.provider.name:
+            return None
 
         if (
             metadata.price_adjustment_mode

@@ -573,4 +573,193 @@ def test_successful_refresh_publishes_complete_replacement(tmp_path):
         result.data,
         replacement.data,
     )
-    
+
+
+def test_provider_switch_replaces_complete_history_without_restatement(
+    cache_manager,
+    validated_dataset,
+):
+    first = cache_manager.write(
+        validated_dataset,
+        provider="yfinance",
+        fetch_timestamp=NOW,
+        price_adjustment_mode="auto_adjust=False",
+        price_basis=YFINANCE_AUTO_ADJUST_FALSE_PRICE_BASIS,
+        bar_convention=(
+            "provider_native_daily_bar;"
+            "timestamp_normalized_to_utc"
+        ),
+    )
+
+    replacement_frame = validated_dataset.data.iloc[
+        -1:
+    ].copy(deep=True)
+
+    replacement_report = ValidationReport(
+        asset=validated_dataset.report.asset,
+        row_count=len(replacement_frame),
+        hard_failures=(),
+        soft_anomalies=(),
+        skipped_checks=(),
+        dataset_fingerprint=dataframe_fingerprint(
+            replacement_frame
+        ),
+    )
+
+    replacement = ValidatedDataset.from_validation(
+        replacement_frame,
+        replacement_report,
+    )
+
+    second = cache_manager.write(
+        replacement,
+        provider="twelve_data",
+        fetch_timestamp=NOW,
+        price_adjustment_mode="not_applicable_spot_fx",
+        price_basis=YFINANCE_AUTO_ADJUST_FALSE_PRICE_BASIS,
+        bar_convention=(
+            "provider_native_1day_date_label;"
+            "normalized_to_utc_midnight"
+        ),
+    )
+
+    assert second.provider == "twelve_data"
+    assert second.dataset_id != first.dataset_id
+    assert second.row_count == 1
+    assert second.restatement is None
+
+    cached = cache_manager.read(
+        replacement.report.asset
+    )
+
+    assert cached.metadata is not None
+    assert cached.metadata.provider == "twelve_data"
+    assert cached.metadata.row_count == 1
+    assert cached.data is not None
+    assert len(cached.data) == 1
+
+def test_bar_convention_is_persisted_and_round_trips(tmp_path):
+    cache = manager(tmp_path)
+    dataset = validated_dataset()
+
+    written = cache.write(
+        dataset,
+        provider="twelve_data",
+        fetch_timestamp=NOW,
+        price_adjustment_mode="not_applicable_spot_fx",
+        price_basis=YFINANCE_AUTO_ADJUST_FALSE_PRICE_BASIS,
+        bar_convention=(
+            "provider_native_1day_date_label;"
+            "normalized_to_utc_midnight"
+        ),
+    )
+
+    assert written.bar_convention == (
+        "provider_native_1day_date_label;"
+        "normalized_to_utc_midnight"
+    )
+
+    result = cache.read("AAPL")
+
+    assert result.state is CacheState.FRESH
+    assert result.metadata is not None
+
+    assert result.metadata.bar_convention == (
+        "provider_native_1day_date_label;"
+        "normalized_to_utc_midnight"
+    )
+
+    pointer_path = tmp_path / "AAPL" / "current.json"
+    pointer = json.loads(
+        pointer_path.read_text(encoding="utf-8")
+    )
+
+    metadata_path = (
+        tmp_path
+        / "AAPL"
+        / "generations"
+        / pointer["generation"]
+        / "metadata.json"
+    )
+
+    raw = json.loads(
+        metadata_path.read_text(encoding="utf-8")
+    )
+
+    assert raw["bar_convention"] == (
+        "provider_native_1day_date_label;"
+        "normalized_to_utc_midnight"
+    )
+
+
+def test_provider_switch_replaces_complete_history_without_restatement(
+    tmp_path,
+):
+    cache = manager(tmp_path)
+
+    original = validated_dataset()
+
+    first = cache.write(
+        original,
+        provider="yfinance",
+        fetch_timestamp=NOW - timedelta(hours=1),
+        price_adjustment_mode="auto_adjust=False",
+        price_basis=YFINANCE_AUTO_ADJUST_FALSE_PRICE_BASIS,
+        bar_convention=(
+            "provider_native_daily_bar;"
+            "timestamp_normalized_to_utc"
+        ),
+    )
+
+    replacement_frame = market_frame().iloc[-1:].copy(
+        deep=True
+    )
+    replacement_frame["source"] = "twelve_data"
+
+    replacement = validated_dataset(
+        replacement_frame
+    )
+
+    second = cache.write(
+        replacement,
+        provider="twelve_data",
+        fetch_timestamp=NOW,
+        price_adjustment_mode="not_applicable_spot_fx",
+        price_basis=YFINANCE_AUTO_ADJUST_FALSE_PRICE_BASIS,
+        bar_convention=(
+            "provider_native_1day_date_label;"
+            "normalized_to_utc_midnight"
+        ),
+    )
+
+    assert first.provider == "yfinance"
+    assert second.provider == "twelve_data"
+    assert second.row_count == 1
+
+    # A provider migration is not a restatement of the old provider.
+    assert second.restatement is None
+
+    result = cache.read("AAPL")
+
+    assert result.state is CacheState.FRESH
+    assert result.metadata is not None
+    assert result.data is not None
+
+    assert result.metadata.provider == "twelve_data"
+    assert result.metadata.row_count == 1
+    assert result.metadata.bar_convention == (
+        "provider_native_1day_date_label;"
+        "normalized_to_utc_midnight"
+    )
+
+    # The new provider owns the complete cached generation.
+    # No Yahoo rows may be stitched into it.
+    assert len(result.data) == 1
+    assert set(result.data["source"]) == {
+        "twelve_data"
+    }
+
+    pd.testing.assert_frame_equal(
+        result.data.reset_index(drop=True),
+        replacement.data.reset_index(drop=True),
+    )
