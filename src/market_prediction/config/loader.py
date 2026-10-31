@@ -28,6 +28,7 @@ from pydantic import (
     Field,
     StrictBool,
     ValidationError,
+    field_validator,
     model_validator,
 )
 
@@ -193,6 +194,176 @@ class ValidationConfig(BaseModel):
 
     asset_classes: AssetClassValidationConfig
 
+class GdeltNewsProviderConfig(BaseModel):
+    """Configuration for the GDELT news source."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: StrictBool
+    base_url: str = Field(min_length=1)
+    request_delay_seconds: float = Field(ge=0)
+
+
+class MarketauxNewsProviderConfig(BaseModel):
+    """Configuration for the Marketaux news source."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: StrictBool
+    base_url: str = Field(min_length=1)
+    api_key_env: str = Field(min_length=1)
+    request_delay_seconds: float = Field(ge=0)
+
+
+class NewsProviderConfig(BaseModel):
+    """Configured news providers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    gdelt: GdeltNewsProviderConfig
+    marketaux: MarketauxNewsProviderConfig
+
+
+class NewsQueryConfig(BaseModel):
+    """One asset-specific market-news query definition."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query_id: str = Field(min_length=1)
+    strict_terms: list[str] = Field(min_length=1)
+    context_terms: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "strict_terms",
+        "context_terms",
+    )
+    @classmethod
+    def validate_query_terms(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        """Reject empty or whitespace-only query terms."""
+
+        if any(
+            not isinstance(term, str)
+            or not term.strip()
+            for term in value
+        ):
+            raise ValueError(
+                "news query terms must be non-empty strings"
+            )
+
+        return value
+
+
+class NewsAvailabilityStrategy(str, Enum):
+    """Supported future article-availability strategies."""
+
+    SESSION_CUTOFF = "session_cutoff"
+    UTC_CUTOFF = "utc_cutoff"
+    FOREX_24_5_CUTOFF = "forex_24_5_cutoff"
+
+
+class NewsAvailabilityRuleConfig(BaseModel):
+    """Availability strategy for one asset class."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    strategy: NewsAvailabilityStrategy
+
+
+class NewsAvailabilityConfig(BaseModel):
+    """Availability rules for every supported asset class."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    equity: NewsAvailabilityRuleConfig
+    crypto: NewsAvailabilityRuleConfig
+    forex: NewsAvailabilityRuleConfig
+    commodity: NewsAvailabilityRuleConfig
+
+
+class NewsValidationConfig(BaseModel):
+    """Validation settings for normalized news records."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    allowed_languages: list[str] = Field(min_length=1)
+    require_title: StrictBool
+    require_canonical_url: StrictBool
+    max_future_seconds: int = Field(ge=0)
+
+    @field_validator("allowed_languages")
+    @classmethod
+    def validate_languages(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        """Reject empty or duplicate language identifiers."""
+
+        if any(
+            not isinstance(language, str)
+            or not language.strip()
+            for language in value
+        ):
+            raise ValueError(
+                "allowed_languages must contain "
+                "non-empty strings"
+            )
+
+        if len(value) != len(set(value)):
+            raise ValueError(
+                "allowed_languages must be unique"
+            )
+
+        return value
+
+
+class NewsConfig(BaseModel):
+    """Pipeline-wide market-news configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    providers: NewsProviderConfig
+    queries: dict[str, list[NewsQueryConfig]] = Field(
+        min_length=1
+    )
+    availability: NewsAvailabilityConfig
+    validation: NewsValidationConfig
+
+    @model_validator(mode="after")
+    def validate_queries(
+        self,
+    ) -> "NewsConfig":
+        """Require usable mappings and globally unique query IDs."""
+
+        query_ids: list[str] = []
+
+        for asset, queries in self.queries.items():
+            if not asset.strip():
+                raise ValueError(
+                    "news query asset identifiers "
+                    "must be non-empty"
+                )
+
+            if not queries:
+                raise ValueError(
+                    f"news asset '{asset}' must define "
+                    "at least one query"
+                )
+
+            query_ids.extend(
+                query.query_id
+                for query in queries
+            )
+
+        if len(query_ids) != len(set(query_ids)):
+            raise ValueError(
+                "news query_id values must be "
+                "globally unique"
+            )
+
+        return self
 
 class PathConfig(BaseModel):
     """Project data locations."""
@@ -215,6 +386,7 @@ class PipelineConfig(BaseModel):
     retry: RetryConfig
     providers: ProviderConfig
     validation: ValidationConfig
+    news: NewsConfig | None = None
     paths: PathConfig
 
 
@@ -355,6 +527,60 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
             _format_validation_error(config_path, exc)
         ) from exc
 
+def _validate_news_asset_queries(
+    assets_config: AssetsConfig,
+    pipeline_config: PipelineConfig,
+) -> None:
+    """Validate news-query coverage against the project asset registry.
+
+    Cross-file validation belongs here rather than inside either
+    AssetsConfig or PipelineConfig because neither configuration object
+    independently knows the contents of the other configuration file.
+
+    Raises:
+        ConfigLoadError:
+            If configured news queries omit project assets or reference
+            assets that do not exist in the project asset registry.
+    """
+
+    if pipeline_config.news is None:
+        return
+
+    project_assets = set(
+        assets_config.assets
+    )
+
+    news_assets = set(
+        pipeline_config.news.queries
+    )
+
+    missing_assets = sorted(
+        project_assets - news_assets
+    )
+
+    unknown_assets = sorted(
+        news_assets - project_assets
+    )
+
+    errors: list[str] = []
+
+    if missing_assets:
+        errors.append(
+            "missing news queries for project assets: "
+            + ", ".join(missing_assets)
+        )
+
+    if unknown_assets:
+        errors.append(
+            "news queries reference unknown assets: "
+            + ", ".join(unknown_assets)
+        )
+
+    if errors:
+        raise ConfigLoadError(
+            "Invalid cross-configuration news mapping: "
+            + "; ".join(errors)
+        )
 
 def load_project_config(
     assets_path: str | Path,
@@ -378,5 +604,10 @@ def load_project_config(
     """
     assets_config = load_assets_config(assets_path)
     pipeline_config = load_pipeline_config(pipeline_path)
+
+    _validate_news_asset_queries(
+        assets_config,
+        pipeline_config,
+    )
 
     return assets_config, pipeline_config
