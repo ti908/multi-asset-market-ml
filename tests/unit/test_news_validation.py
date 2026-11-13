@@ -14,6 +14,9 @@ from market_prediction.news.validation import (
     NewsStatus,
     validate_articles,
 )
+from market_prediction.news.storage import (
+    news_dataset_fingerprint,
+)
 
 
 UTC = timezone.utc
@@ -96,6 +99,9 @@ def test_valid_articles_pass() -> None:
 
     assert report.status is NewsStatus.PASSED
     assert report.article_count == 1
+    assert report.dataset_fingerprint == (
+        news_dataset_fingerprint([article])
+    )
     assert report.hard_failures == []
     assert report.soft_anomalies == []
     assert report.skipped_checks == []
@@ -636,3 +642,49 @@ def test_soft_anomalies_do_not_block_dataset() -> None:
         "unknown_timestamp_source",
         "unknown_text_license",
     }
+
+def test_blocked_nonempty_dataset_still_records_fingerprint() -> None:
+    article = make_article(
+        matched_assets=["UNKNOWN"],
+    )
+
+    report = validate_articles(
+        [article],
+        allowed_assets={"AAPL"},
+        allowed_query_ids={"aapl_company"},
+        allowed_languages={"en"},
+        retrieved_at_utc=datetime(
+            2026,
+            10,
+            30,
+            13,
+            0,
+            tzinfo=UTC,
+        ),
+        max_future_seconds=0,
+    )
+
+    assert report.status is NewsStatus.BLOCKED
+    assert report.dataset_fingerprint == (
+        news_dataset_fingerprint([article])
+    )
+
+def test_empty_dataset_has_no_fingerprint() -> None:
+    report = validate_articles(
+        [],
+        allowed_assets={"AAPL"},
+        allowed_query_ids={"aapl_company"},
+        allowed_languages={"en"},
+        retrieved_at_utc=datetime(
+            2026,
+            10,
+            30,
+            13,
+            0,
+            tzinfo=UTC,
+        ),
+        max_future_seconds=0,
+    )
+
+    assert report.status is NewsStatus.BLOCKED
+    assert report.dataset_fingerprint is None

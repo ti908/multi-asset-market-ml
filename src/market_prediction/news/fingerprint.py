@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import hashlib
 
+import json
+from market_prediction.news.models import ArticleRecord
+
 
 _FIELD_SEPARATOR = b"\x1f"
 _NULL_MARKER = b"\x00"
@@ -155,3 +158,45 @@ def content_fingerprint(
     )
 
     return digest.hexdigest()
+
+def news_dataset_fingerprint(
+    articles: list[ArticleRecord],
+) -> str:
+    """Return the SHA-256 identity of an ordered canonical news dataset.
+
+    The fingerprint is calculated from the same deterministic JSON
+    representation used by news storage. Article order is significant.
+    """
+    if not isinstance(articles, list):
+        raise TypeError(
+            "articles must be a list"
+        )
+
+    if not articles:
+        raise ValueError(
+            "articles must not be empty"
+        )
+
+    lines: list[str] = []
+
+    for article in articles:
+        if not isinstance(article, ArticleRecord):
+            raise TypeError(
+                "articles must contain "
+                "ArticleRecord instances"
+            )
+
+        lines.append(
+            json.dumps(
+                article.model_dump(mode="json"),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+
+    serialized = "\n".join(lines)
+
+    return hashlib.sha256(
+        serialized.encode("utf-8")
+    ).hexdigest()

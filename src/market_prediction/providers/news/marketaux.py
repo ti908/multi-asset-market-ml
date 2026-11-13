@@ -469,7 +469,6 @@ def _format_marketaux_datetime(
         .isoformat(
             timespec="seconds",
         )
-        + "Z"
     )
 
 

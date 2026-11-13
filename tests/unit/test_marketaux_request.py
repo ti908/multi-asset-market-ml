@@ -111,10 +111,10 @@ def test_build_marketaux_request_maps_window() -> None:
     )
 
     assert params["published_after"] == (
-        "2025-10-30T12:30:00Z"
+        "2025-10-30T12:30:00"
     )
     assert params["published_before"] == (
-        "2025-10-31T08:45:00Z"
+        "2025-10-31T08:45:00"
     )
 
 

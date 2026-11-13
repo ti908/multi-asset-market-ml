@@ -19,6 +19,10 @@ from market_prediction.news.models import (
     TimestampSource,
 )
 
+from market_prediction.news.fingerprint import (
+    news_dataset_fingerprint,
+)
+
 
 class NewsStatus(str, Enum):
     """Validation status for a canonical news dataset."""
@@ -43,6 +47,7 @@ class NewsValidationReport:
     """Validation result for one canonical news dataset."""
 
     article_count: int
+    dataset_fingerprint: str | None = None
     hard_failures: list[NewsIssue] = field(
         default_factory=list
     )
@@ -61,7 +66,6 @@ class NewsValidationReport:
             return NewsStatus.BLOCKED
 
         return NewsStatus.PASSED
-
 
 def _require_aware_utc(
     value: datetime,
@@ -116,8 +120,15 @@ def validate_articles(
             "max_future_seconds cannot be negative"
         )
 
+    dataset_fingerprint = (
+        news_dataset_fingerprint(articles)
+        if articles
+        else None
+    )
+
     report = NewsValidationReport(
         article_count=len(articles),
+        dataset_fingerprint=dataset_fingerprint,
         skipped_checks=list(
             skipped_checks or []
         ),

@@ -34,6 +34,7 @@ news:
       base_url: "https://api.marketaux.com/v1"
       api_key_env: "MARKETAUX_API_TOKEN"
       request_delay_seconds: 1.0
+      timeout_seconds: 30.0
 
   queries:
     AAPL:

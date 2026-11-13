@@ -213,6 +213,7 @@ class MarketauxNewsProviderConfig(BaseModel):
     base_url: str = Field(min_length=1)
     api_key_env: str = Field(min_length=1)
     request_delay_seconds: float = Field(ge=0)
+    timeout_seconds: float = Field(gt=0)
 
 
 class NewsProviderConfig(BaseModel):

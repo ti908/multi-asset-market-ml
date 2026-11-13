@@ -109,13 +109,14 @@ def news_config() -> dict:
                 ),
                 "request_delay_seconds": 1.0,
             },
-            "marketaux": {
+             "marketaux": {
                 "enabled": True,
                 "base_url": (
                     "https://api.marketaux.com/v1"
                 ),
                 "api_key_env": "MARKETAUX_API_TOKEN",
                 "request_delay_seconds": 1.0,
+                "timeout_seconds": 30.0,
             },
         },
         "queries": {
@@ -242,6 +243,11 @@ def test_valid_news_config_loads(
     )
 
     assert (
+        config.news.providers.marketaux.timeout_seconds
+        == 30.0
+    )
+
+    assert (
         config.news.queries["AAPL"][0].query_id
         == "aapl_company"
     )
@@ -306,6 +312,23 @@ def test_marketaux_requires_api_key_env(
             )
         )
 
+def test_marketaux_rejects_non_positive_timeout(
+    payload,
+    tmp_path,
+) -> None:
+    config_payload = add_news(payload)
+
+    config_payload["news"]["providers"]["marketaux"][
+        "timeout_seconds"
+    ] = 0
+
+    with pytest.raises(ConfigLoadError):
+        load_pipeline_config(
+            write_config(
+                tmp_path,
+                config_payload,
+            )
+        )
 
 def test_query_requires_query_id(
     payload,
