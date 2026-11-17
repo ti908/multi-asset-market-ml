@@ -242,3 +242,33 @@ def test_unexpected_schema_version_is_hard_failure() -> None:
         issue.rule == "unexpected_schema_version"
         for issue in report.hard_failures
     )
+
+def test_validation_report_binds_dataset_fingerprint() -> None:
+    sentiments = [make_sentiment()]
+
+    report = validate(sentiments)
+
+    from market_prediction.sentiment.fingerprint import (
+        sentiment_dataset_fingerprint,
+    )
+
+    assert report.dataset_fingerprint == (
+        sentiment_dataset_fingerprint(
+            sentiments
+        )
+    )
+
+
+def test_empty_dataset_has_validation_fingerprint() -> None:
+    sentiments: list[SentimentRecord] = []
+
+    report = validate(sentiments)
+
+    from market_prediction.sentiment.fingerprint import (
+        sentiment_dataset_fingerprint,
+    )
+
+    assert report.status is SentimentStatus.PASSED
+    assert report.dataset_fingerprint == (
+        sentiment_dataset_fingerprint([])
+    )

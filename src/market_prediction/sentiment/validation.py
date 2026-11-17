@@ -14,6 +14,9 @@ from enum import Enum
 from market_prediction.sentiment.models import (
     SentimentRecord,
 )
+from market_prediction.sentiment.fingerprint import (
+    sentiment_dataset_fingerprint,
+)
 
 
 class SentimentStatus(str, Enum):
@@ -39,6 +42,7 @@ class SentimentValidationReport:
     """Validation result for one canonical sentiment dataset."""
 
     sentiment_count: int
+    dataset_fingerprint: str | None = None
     hard_failures: list[SentimentIssue] = field(
         default_factory=list
     )
@@ -83,6 +87,9 @@ def validate_sentiments(
         sentiment_count=len(sentiments),
         skipped_checks=list(
             skipped_checks or []
+        ),
+        dataset_fingerprint=sentiment_dataset_fingerprint(
+            sentiments
         ),
     )
 

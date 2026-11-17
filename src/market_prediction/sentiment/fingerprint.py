@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from market_prediction.sentiment.models import SentimentRecord
+
 import hashlib
 import json
 
@@ -86,6 +88,52 @@ def sentiment_identity(
 
     canonical_payload = json.dumps(
         identity_fields,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+    return hashlib.sha256(
+        canonical_payload.encode("utf-8")
+    ).hexdigest()
+
+def sentiment_dataset_fingerprint(
+    sentiments: list[SentimentRecord],
+) -> str:
+    """Return the deterministic SHA-256 identity of a sentiment dataset.
+
+    Dataset identity is intentionally order-sensitive because persisted
+    canonical sentiment records preserve their input order.
+
+    Empty sentiment datasets are valid and therefore have a stable
+    fingerprint.
+    """
+
+    if not isinstance(sentiments, list):
+        raise TypeError(
+            "sentiments must be a list"
+        )
+
+    canonical_records: list[dict[str, object]] = []
+
+    for sentiment in sentiments:
+        if not isinstance(
+            sentiment,
+            SentimentRecord,
+        ):
+            raise TypeError(
+                "sentiments must contain "
+                "SentimentRecord instances"
+            )
+
+        canonical_records.append(
+            sentiment.model_dump(
+                mode="json"
+            )
+        )
+
+    canonical_payload = json.dumps(
+        canonical_records,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
