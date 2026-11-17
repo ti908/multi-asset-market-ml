@@ -106,6 +106,17 @@ news:
     require_canonical_url: true
     max_future_seconds: 0
 
+sentiment:
+  primary_scorer: "finbert"
+  baseline_scorer: "vader"
+  input_text_strategy: "title_and_snippet"
+  schema_version: "1"
+
+  finbert:
+    model_name: "ProsusAI/finbert"
+    model_revision: "0bc2ac10dda6929bcb1f77ccc43c7ec5c424f031"
+    max_tokens: 512
+
 validation:
   asset_classes:
     equity:

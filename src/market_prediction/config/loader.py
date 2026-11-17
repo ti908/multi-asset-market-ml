@@ -27,6 +27,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StrictBool,
+    StrictInt,
     ValidationError,
     field_validator,
     model_validator,
@@ -366,6 +367,106 @@ class NewsConfig(BaseModel):
 
         return self
 
+class SentimentScorerName(str, Enum):
+    """Supported article-level sentiment scorers."""
+
+    FINBERT = "finbert"
+    VADER = "vader"
+
+
+class SentimentInputTextStrategy(str, Enum):
+    """Supported article text representations for sentiment."""
+
+    TITLE_AND_SNIPPET = "title_and_snippet"
+
+
+class FinBertSentimentConfig(BaseModel):
+    """Configuration for the primary FinBERT scorer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_name: str = Field(min_length=1)
+    model_revision: str = Field(
+        min_length=40,
+        max_length=40,
+        pattern=r"^[0-9a-f]{40}$",
+    )
+    max_tokens: StrictInt = Field(
+        gt=0,
+        le=512,
+    )
+
+    @field_validator("model_name")
+    @classmethod
+    def validate_model_name(
+        cls,
+        value: str,
+    ) -> str:
+        """Require a nonblank Hugging Face repository identifier."""
+
+        if (
+            not value.strip()
+            or "/" not in value
+        ):
+            raise ValueError(
+                "model_name must be a non-empty "
+                "Hugging Face repository identifier"
+            )
+
+        owner, model = value.split("/", maxsplit=1)
+
+        if not owner.strip() or not model.strip():
+            raise ValueError(
+                "model_name must be a non-empty "
+                "Hugging Face repository identifier"
+            )
+
+        return value
+
+
+class SentimentConfig(BaseModel):
+    """Pipeline-wide article-level sentiment configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    primary_scorer: SentimentScorerName
+    baseline_scorer: SentimentScorerName
+    input_text_strategy: SentimentInputTextStrategy
+    schema_version: str = Field(min_length=1)
+    finbert: FinBertSentimentConfig
+
+    @field_validator("schema_version")
+    @classmethod
+    def validate_schema_version(
+        cls,
+        value: str,
+    ) -> str:
+        """Reject blank schema-version identifiers."""
+
+        if not value.strip():
+            raise ValueError(
+                "schema_version must not be blank"
+            )
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_scorer_roles(
+        self,
+    ) -> "SentimentConfig":
+        """Require distinct primary and baseline scorers."""
+
+        if (
+            self.primary_scorer
+            is self.baseline_scorer
+        ):
+            raise ValueError(
+                "primary_scorer and baseline_scorer "
+                "must differ"
+            )
+
+        return self
+
 class PathConfig(BaseModel):
     """Project data locations."""
 
@@ -388,6 +489,7 @@ class PipelineConfig(BaseModel):
     providers: ProviderConfig
     validation: ValidationConfig
     news: NewsConfig | None = None
+    sentiment: SentimentConfig | None = None
     paths: PathConfig
 
 
